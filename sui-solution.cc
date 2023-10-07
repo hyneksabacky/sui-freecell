@@ -2,81 +2,36 @@
 #include <queue>
 #include <set>
 #include <stack>
-
-struct bfsMapping {
-	SearchState prevState;
-	SearchAction action;
-	bool head;
-};
-
-std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState &init_state) {
-	std::queue<SearchState> frontier;
-	std::vector<SearchAction> solution;
-	std::set<SearchState> explored;
-	std::map<SearchState, std::vector<SearchAction>> stateMap;
-
-	SearchState working_state(init_state);
-	frontier.push(working_state);
-
-	stateMap[working_state] = {};
-
-	while (!frontier.empty()) {
-		SearchState current(frontier.front());
-		frontier.pop();
-		
-		if (current.isFinal()) {
-			return stateMap[current];
-		}
-
-		if (explored.find(current) == explored.end()) {
-			for (const SearchAction &action : current.actions()) {
-				auto newState = action.execute(current);
-				frontier.push(newState);
-				
-				auto newActions = stateMap[current];
-				newActions.push_back(action);
-				stateMap[newState] = newActions;
-			}
-			explored.insert(current);
-		}
-	}
-
-	return {};
-}
+#include <memory>
+#include <algorithm>
 
 // std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState &init_state) {
 // 	std::queue<SearchState> frontier;
 // 	std::vector<SearchAction> solution;
 // 	std::set<SearchState> explored;
-// 	std::map<SearchState, bfsMapping> stateMap;
+// 	std::map<SearchState, std::vector<SearchAction>> stateMap;
 
 // 	SearchState working_state(init_state);
 // 	frontier.push(working_state);
 
-// 	stateMap[working_state] = {working_state, working_state.actions()[0], true};
+// 	stateMap[working_state] = {};
 
 // 	while (!frontier.empty()) {
 // 		SearchState current(frontier.front());
 // 		frontier.pop();
 		
 // 		if (current.isFinal()) {
-			
-// 			std::vector<SearchAction> actions = {};
-// 			bfsMapping currentMapping = stateMap[current];
-// 			SearchState = SearchState
-// 			while (!currentMapping.head) {
-// 				auto newMapping(stateMap[currentMapping.prevState]);
-// 				actions.push_back(currentMapping.action);
-// 				currentMapping = stateMap[currentMapping.prevState];
-// 			}
-// 			return actions;
+// 			return stateMap[current];
 // 		}
 
 // 		if (explored.find(current) == explored.end()) {
 // 			for (const SearchAction &action : current.actions()) {
 // 				auto newState = action.execute(current);
 // 				frontier.push(newState);
-// 				stateMap[newState] = {current, action, false};
+				
+// 				auto newActions = stateMap[current];
+// 				newActions.push_back(action);
+// 				stateMap[newState] = newActions;
 // 			}
 // 			explored.insert(current);
 // 		}
@@ -84,6 +39,57 @@ std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState &init_stat
 
 // 	return {};
 // }
+
+struct bfsMapping {
+	std::shared_ptr<SearchState> state;
+	std::shared_ptr<SearchAction> action;	
+
+	std::shared_ptr<bfsMapping> prevNode;
+	bfsMapping(const SearchState state) : state(std::make_shared<SearchState>(state)), action(nullptr), prevNode(nullptr) {}
+	bfsMapping(const SearchState state, const SearchAction action, const bfsMapping prevNode) : 
+	state(std::make_shared<SearchState>(state)), 
+	action(std::make_shared<SearchAction>(action)), 
+	prevNode(std::make_shared<bfsMapping>(prevNode)) {}
+	bfsMapping() : state(nullptr), action(nullptr), prevNode(nullptr) {}
+};
+
+std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState &init_state) {
+	std::queue<bfsMapping> frontier;
+	std::set<SearchState> explored;
+
+	frontier.push(init_state);
+
+	while (!frontier.empty()) {
+		bfsMapping current = frontier.front();
+		frontier.pop();
+	
+		if (current.state->isFinal()) {
+			std::vector<SearchAction> actions = {};
+
+			while (current.prevNode) {
+				actions.push_back(*current.action);
+				current = *current.prevNode;
+			}
+			//return reversed actions because we are going from final state to initial state
+			std::reverse(actions.begin(), actions.end());
+			
+			return actions;
+		}
+
+		if (explored.find(*current.state) == explored.end()) {
+			std::shared_ptr<SearchAction> newAction;
+
+			for (const SearchAction &action : current.state->actions()) {
+				SearchState newState(action.execute(*current.state));
+				bfsMapping newNode(newState, action, current); 
+				frontier.push(newNode);
+			}
+			explored.insert(*current.state);
+		}
+	}
+
+	return {};
+}
 
 
 struct dfsMapping {
