@@ -5,41 +5,6 @@
 #include <memory>
 #include <algorithm>
 
-// std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState &init_state) {
-// 	std::queue<SearchState> frontier;
-// 	std::vector<SearchAction> solution;
-// 	std::set<SearchState> explored;
-// 	std::map<SearchState, std::vector<SearchAction>> stateMap;
-
-// 	SearchState working_state(init_state);
-// 	frontier.push(working_state);
-
-// 	stateMap[working_state] = {};
-
-// 	while (!frontier.empty()) {
-// 		SearchState current(frontier.front());
-// 		frontier.pop();
-		
-// 		if (current.isFinal()) {
-// 			return stateMap[current];
-// 		}
-
-// 		if (explored.find(current) == explored.end()) {
-// 			for (const SearchAction &action : current.actions()) {
-// 				auto newState = action.execute(current);
-// 				frontier.push(newState);
-				
-// 				auto newActions = stateMap[current];
-// 				newActions.push_back(action);
-// 				stateMap[newState] = newActions;
-// 			}
-// 			explored.insert(current);
-// 		}
-// 	}
-
-// 	return {};
-// }
-
 struct bfsMapping {
 	std::shared_ptr<SearchState> state;
 	std::shared_ptr<SearchAction> action;	
