@@ -107,6 +107,62 @@ double StudentHeuristic::distanceLowerBound(const GameState &state) const {
     return 0;
 }
 
+struct AStarFrontierItem {
+	std::shared_ptr<SearchState> state;
+	std::shared_ptr<SearchAction> action;
+
+	int depth;	
+	double f_value;
+
+	std::shared_ptr<AStarFrontierItem> prevNode;
+
+	AStarFrontierItem(const SearchState state) : state(std::make_shared<SearchState>(state)), action(nullptr), depth(0), f_value(0.0), prevNode(nullptr) {}
+	AStarFrontierItem(const SearchState state, const SearchAction action, const int depth, const double h_value, const AStarFrontierItem prevNode) : 
+	state(std::make_shared<SearchState>(state)), 
+	action(std::make_shared<SearchAction>(action)), 
+	f_value((depth+1.0) + h_value),
+	depth(depth + 1),
+	prevNode(std::make_shared<AStarFrontierItem>(prevNode)) {}
+	AStarFrontierItem() : state(nullptr), action(nullptr), f_value(MAXFLOAT), depth(0), prevNode(nullptr) {}
+
+	bool operator<(const AStarFrontierItem& other) const { //guarantees that the states will be ordered by f_value in frontier
+        return f_value < other.f_value;
+    }
+};
+
 std::vector<SearchAction> AStarSearch::solve(const SearchState &init_state) {
+	std::multiset<AStarFrontierItem> frontier;
+	std::set<SearchState> explored;
+	std::vector<SearchAction> solution;
+
+	frontier.insert(init_state);
+
+	while (!frontier.empty()) {
+		AStarFrontierItem current = *(frontier.begin());
+		frontier.erase(frontier.begin());
+
+		if (current.state->isFinal()) {
+			std::vector<SearchAction> actions = {};
+
+			while (current.prevNode) {
+				actions.push_back(*current.action);
+				current = *current.prevNode;
+			}
+			//return reversed actions because we are going from final state to initial state
+			std::reverse(actions.begin(), actions.end());
+			
+			return actions;
+		}
+
+		if (explored.find(*current.state) == explored.end()) {
+			for (const SearchAction &action : current.state->actions()) {
+				SearchState newState(action.execute(*current.state));
+				AStarFrontierItem newNode(newState, action, compute_heuristic(newState, *(this->heuristic_)), current.depth, current); 
+				frontier.insert(newNode);
+			}
+			explored.insert(*current.state);
+		}
+	}
+
 	return {};
 }
