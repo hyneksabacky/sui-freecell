@@ -1,31 +1,84 @@
+/**
+ * @file search-strategies.cpp
+ * @brief Implementation of search strategies for solving a problem using various algorithms.
+ *
+ * This file contains the implementation of three search strategies: Breadth-First Search (BFS),
+ * Depth-First Search (DFS), and A* Search. These strategies are used to find a solution of FreeCell game
+ *
+ * @author Mikuláš Brázda (xbrazd21@stud.fit.vutbr.cz), Hynek Šabacký (xsabac02@stud.fit.vutbr.cz)
+ * @date 8.10.2023
+ */
+
 #include "search-strategies.h"
 #include <queue>
 #include <set>
 #include <stack>
 #include <memory>
 #include <algorithm>
+#include "memusage.h"
 
-struct bfsMapping {
+const unsigned MEM_LIMIT = 50'000'000;
+
+struct bfsNode {
 	std::shared_ptr<SearchState> state;
 	std::shared_ptr<SearchAction> action;	
 
-	std::shared_ptr<bfsMapping> prevNode;
-	bfsMapping(const SearchState state) : state(std::make_shared<SearchState>(state)), action(nullptr), prevNode(nullptr) {}
-	bfsMapping(const SearchState state, const SearchAction action, const bfsMapping prevNode) : 
+	std::shared_ptr<bfsNode> prevNode;
+	bfsNode(const SearchState state) : state(std::make_shared<SearchState>(state)), action(nullptr), prevNode(nullptr) {}
+	bfsNode(const SearchState state, const SearchAction action, const bfsNode prevNode) : 
 	state(std::make_shared<SearchState>(state)), 
 	action(std::make_shared<SearchAction>(action)), 
-	prevNode(std::make_shared<bfsMapping>(prevNode)) {}
-	bfsMapping() : state(nullptr), action(nullptr), prevNode(nullptr) {}
+	prevNode(std::make_shared<bfsNode>(prevNode)) {}
+	bfsNode() : state(nullptr), action(nullptr), prevNode(nullptr) {}
 };
 
+struct dfsNode {
+	SearchState state;
+	SearchAction action;
+	int depth;
+};
+
+struct AStarNode {
+	std::shared_ptr<SearchState> state;
+	std::shared_ptr<SearchAction> action;
+
+	int depth;	
+	double f_value;
+
+	std::shared_ptr<AStarNode> prevNode;
+	
+	AStarNode(const SearchState state) : state(std::make_shared<SearchState>(state)), action(nullptr), depth(0), f_value(0.0), prevNode(nullptr) {}
+	AStarNode(const SearchState state, const SearchAction action, const int depth, const double h_value, const AStarNode prevNode) : 
+	state(std::make_shared<SearchState>(state)), 
+	action(std::make_shared<SearchAction>(action)), 
+	depth(depth + 1),
+	f_value((depth+1.0) + h_value),
+	prevNode(std::make_shared<AStarNode>(prevNode)) {}
+	AStarNode() : state(nullptr), action(nullptr), depth(0), f_value(MAXFLOAT), prevNode(nullptr) {}
+
+	// guarantees that the states will be ordered by f_value in frontier
+	bool operator<(const AStarNode& other) const { 
+        return f_value < other.f_value;
+    }
+};
+
+/**
+ * @brief Solve a problem using Breadth-First Search (BFS).
+ *
+ * This method uses the Breadth-First Search algorithm to find a solution to a problem
+ * starting from the given initial state.
+ *
+ * @param init_state The initial state of the problem.
+ * @return A vector of SearchAction objects representing the sequence of actions to reach the solution.
+ */
 std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState &init_state) {
-	std::queue<bfsMapping> frontier;
+	std::queue<bfsNode> frontier;
 	std::set<SearchState> explored;
 
 	frontier.push(init_state);
 
-	while (!frontier.empty()) {
-		bfsMapping current = frontier.front();
+	while (!frontier.empty() and (getCurrentRSS() + MEM_LIMIT < mem_limit_)) {
+		bfsNode current = frontier.front();
 		frontier.pop();
 	
 		if (current.state->isFinal()) {
@@ -46,7 +99,7 @@ std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState &init_stat
 
 			for (const SearchAction &action : current.state->actions()) {
 				SearchState newState(action.execute(*current.state));
-				bfsMapping newNode(newState, action, current); 
+				bfsNode newNode(newState, action, current); 
 				frontier.push(newNode);
 			}
 			explored.insert(*current.state);
@@ -56,28 +109,30 @@ std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState &init_stat
 	return {};
 }
 
-
-struct dfsMapping {
-	SearchState state;
-	SearchAction action;
-	int depth;
-};
-
+/**
+ * @brief Solve a problem using Depth-First Search (DFS).
+ *
+ * This method uses the Depth-First Search algorithm to find a solution to a problem
+ * starting from the given initial state.
+ *
+ * @param init_state The initial state of the problem.
+ * @return A vector of SearchAction objects representing the sequence of actions to reach the solution.
+ */
 std::vector<SearchAction> DepthFirstSearch::solve(const SearchState &init_state) {
-	std::stack<dfsMapping> frontier;
+	std::stack<dfsNode> frontier;
 	std::set<SearchState> explored;
 	std::vector<SearchAction> solution;
 
 	SearchState working_state(init_state);
 	frontier.push({working_state, working_state.actions()[0], 0});
 
-	while (!frontier.empty()) {
+	while (!frontier.empty() and (getCurrentRSS() + MEM_LIMIT < mem_limit_)) {
 		SearchState current(frontier.top().state);
 		SearchAction action(frontier.top().action);
 		int depth = frontier.top().depth;
 		frontier.pop();
 
-		while (solution.size() >= depth && depth != 0) {
+		while (solution.size() >= static_cast<unsigned>(depth) && depth != 0) {
 			solution.pop_back();
 		}
 
@@ -103,15 +158,25 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState &init_state)
 	return {};
 }
 
-double StudentHeuristic::distanceLowerBound(const GameState &state) const {
-	// heavily inspired by https://ai.dmi.unibas.ch/papers/paul-helmert-icaps2016wshsdip.pdf
+/**
+ * @brief Calculate a lower bound for the distance in a game state.
+ *
+ * This method calculates a lower bound for the distance in a game state using a heuristic
+ * inspired by https://ai.dmi.unibas.ch/papers/paul-helmert-icaps2016wshsdip.pdf. 
+ * The heuristic considers 1-suit cycles and cards out of home. 1-suit cycles happen
+ * when two cards of the same color are in the same stack and the card on top has a lower value.
 
-    /* identify 1-suit cycles*/
+ * @param state The game state for which to calculate the lower bound.
+ * @return The calculated lower bound for the distance in the game state.
+ */
+double StudentHeuristic::distanceLowerBound(const GameState &state) const {
+
+    // identify 1-suit cycles
 	int cycleCount = 0;
 	for (auto stack : state.stacks) {
 		std::vector<Card> stackCards = stack.storage();
 
-		for (int i = 0; i<stackCards.size(); i++) {
+		for (unsigned int i = 0; i<stackCards.size(); i++) {
 			auto cardX = stack.storage()[i];
 			auto stackCardsRest = std::vector<Card>(stackCards.begin() + i, stackCards.end());
 
@@ -133,38 +198,24 @@ double StudentHeuristic::distanceLowerBound(const GameState &state) const {
 	return cycleCount*3.0+cards_out_of_home;
 }
 
-struct AStarFrontierItem {
-	std::shared_ptr<SearchState> state;
-	std::shared_ptr<SearchAction> action;
-
-	int depth;	
-	double f_value;
-
-	std::shared_ptr<AStarFrontierItem> prevNode;
-
-	AStarFrontierItem(const SearchState state) : state(std::make_shared<SearchState>(state)), action(nullptr), depth(0), f_value(0.0), prevNode(nullptr) {}
-	AStarFrontierItem(const SearchState state, const SearchAction action, const int depth, const double h_value, const AStarFrontierItem prevNode) : 
-	state(std::make_shared<SearchState>(state)), 
-	action(std::make_shared<SearchAction>(action)), 
-	f_value((depth+1.0) + h_value),
-	depth(depth + 1),
-	prevNode(std::make_shared<AStarFrontierItem>(prevNode)) {}
-	AStarFrontierItem() : state(nullptr), action(nullptr), f_value(MAXFLOAT), depth(0), prevNode(nullptr) {}
-
-	bool operator<(const AStarFrontierItem& other) const { //guarantees that the states will be ordered by f_value in frontier
-        return f_value < other.f_value;
-    }
-};
-
+/**
+ * @brief Solve a problem using A* Search with a heuristic.
+ *
+ * This method uses the A* Search algorithm to find a solution to a problem
+ * starting from the given initial state and using a provided heuristic.
+ *
+ * @param init_state The initial state of the problem.
+ * @return A vector of SearchAction objects representing the sequence of actions to reach the solution.
+ */
 std::vector<SearchAction> AStarSearch::solve(const SearchState &init_state) {
-	std::multiset<AStarFrontierItem> frontier;
+	std::multiset<AStarNode> frontier;
 	std::map<SearchState, double> explored;
 	std::vector<SearchAction> solution;
 
 	frontier.insert(init_state);
 
-	while (!frontier.empty()) {
-		AStarFrontierItem current = *(frontier.begin());
+	while (!frontier.empty() and (getCurrentRSS() + MEM_LIMIT < mem_limit_)) {
+		AStarNode current = *(frontier.begin());
 		frontier.erase(frontier.begin());
 
 		if (current.state->isFinal()) {
@@ -183,7 +234,7 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState &init_state) {
 		if (explored.find(*current.state) == explored.end() || explored.find(*current.state)->second > current.f_value) {
 			for (const SearchAction &action : current.state->actions()) {
 				SearchState newState(action.execute(*current.state));
-				AStarFrontierItem newNode(newState, action, compute_heuristic(newState, *(this->heuristic_)), current.depth, current); 
+				AStarNode newNode(newState, action, compute_heuristic(newState, *(this->heuristic_)), current.depth, current); 
 				frontier.insert(newNode);
 			}
 			explored[*current.state] = current.f_value;
