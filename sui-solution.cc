@@ -104,7 +104,33 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState &init_state)
 }
 
 double StudentHeuristic::distanceLowerBound(const GameState &state) const {
-    return 0;
+	// heavily inspired by https://ai.dmi.unibas.ch/papers/paul-helmert-icaps2016wshsdip.pdf
+
+    /* identify 1-suit cycles*/
+	int cycleCount = 0;
+	for (auto stack : state.stacks) {
+		std::vector<Card> stackCards = stack.storage();
+
+		for (int i = 0; i<stackCards.size(); i++) {
+			auto cardX = stack.storage()[i];
+			auto stackCardsRest = std::vector<Card>(stackCards.begin() + i, stackCards.end());
+
+			for (auto cardY : stackCardsRest) {
+				if (cardY.color == cardX.color && cardY.value > cardX.value)
+					cycleCount++;
+			}
+		}
+	}
+	
+	int cards_out_of_home = king_value * colors_list.size();
+    for (const auto &home : state.homes) {
+        auto opt_top = home.topCard();
+        if (opt_top.has_value())
+            cards_out_of_home -= opt_top->value;
+    }
+
+	// to normalize the heuristic so that cycleCount has bigger weight
+	return cycleCount*3.0+cards_out_of_home;
 }
 
 struct AStarFrontierItem {
@@ -132,7 +158,7 @@ struct AStarFrontierItem {
 
 std::vector<SearchAction> AStarSearch::solve(const SearchState &init_state) {
 	std::multiset<AStarFrontierItem> frontier;
-	std::set<SearchState> explored;
+	std::map<SearchState, double> explored;
 	std::vector<SearchAction> solution;
 
 	frontier.insert(init_state);
@@ -154,14 +180,14 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState &init_state) {
 			return actions;
 		}
 
-		if (explored.find(*current.state) == explored.end()) {
+		if (explored.find(*current.state) == explored.end() || explored.find(*current.state)->second > current.f_value) {
 			for (const SearchAction &action : current.state->actions()) {
 				SearchState newState(action.execute(*current.state));
 				AStarFrontierItem newNode(newState, action, compute_heuristic(newState, *(this->heuristic_)), current.depth, current); 
 				frontier.insert(newNode);
 			}
-			explored.insert(*current.state);
-		}
+			explored[*current.state] = current.f_value;
+		} 
 	}
 
 	return {};
