@@ -6,7 +6,7 @@
  * Depth-First Search (DFS), and A* Search. These strategies are used to find a solution of FreeCell game
  *
  * @author Mikuláš Brázda (xbrazd21@stud.fit.vutbr.cz), Hynek Šabacký (xsabac02@stud.fit.vutbr.cz)
- * @date 8.10.2023
+ * @date 10.10.2023
  */
 
 #include "search-strategies.h"
@@ -54,7 +54,7 @@ struct AStarNode {
 	depth(depth + 1),
 	f_value((depth+1.0) + h_value),
 	prevNode(std::make_shared<AStarNode>(prevNode)) {}
-	AStarNode() : state(nullptr), action(nullptr), depth(0), f_value(MAXFLOAT), prevNode(nullptr) {}
+	AStarNode() : state(nullptr), action(nullptr), depth(0), f_value(0.0), prevNode(nullptr) {}
 
 	// guarantees that the states will be ordered by f_value in frontier
 	bool operator<(const AStarNode& other) const { 
@@ -75,31 +75,34 @@ std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState &init_stat
 	std::queue<bfsNode> frontier;
 	std::set<SearchState> explored;
 
+	if (init_state.isFinal())
+		return {};
+
 	frontier.push(init_state);
 
 	while (!frontier.empty() and (getCurrentRSS() + MEM_LIMIT < mem_limit_)) {
 		bfsNode current = frontier.front();
 		frontier.pop();
-	
-		if (current.state->isFinal()) {
-			std::vector<SearchAction> actions = {};
 
-			while (current.prevNode) {
-				actions.push_back(*current.action);
-				current = *current.prevNode;
-			}
-			//return reversed actions because we are going from final state to initial state
-			std::reverse(actions.begin(), actions.end());
-			
-			return actions;
-		}
 
 		if (explored.find(*current.state) == explored.end()) {
 			std::shared_ptr<SearchAction> newAction;
 
 			for (const SearchAction &action : current.state->actions()) {
 				SearchState newState(action.execute(*current.state));
+				
 				bfsNode newNode(newState, action, current); 
+				if (newNode.state->isFinal()) {
+					std::vector<SearchAction> actions = {};
+
+					while (newNode.prevNode) {
+						actions.push_back(*newNode.action);
+						newNode = *newNode.prevNode;
+					}
+					//return reversed actions because we are going from final state to initial state
+					std::reverse(actions.begin(), actions.end());
+					return actions;
+				}
 				frontier.push(newNode);
 			}
 			explored.insert(*current.state);
@@ -120,38 +123,38 @@ std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState &init_stat
  */
 std::vector<SearchAction> DepthFirstSearch::solve(const SearchState &init_state) {
 	std::stack<dfsNode> frontier;
-	std::set<SearchState> explored;
 	std::vector<SearchAction> solution;
+	int size;
 
-	SearchState working_state(init_state);
-	frontier.push({working_state, working_state.actions()[0], 0});
+	if (init_state.isFinal())
+		return {};
 
-	while (!frontier.empty() and (getCurrentRSS() + MEM_LIMIT < mem_limit_)) {
-		SearchState current(frontier.top().state);
-		SearchAction action(frontier.top().action);
-		int depth = frontier.top().depth;
+	frontier.push({init_state, init_state.actions()[0], 0});
+
+	while (!frontier.empty() ) {
+		dfsNode current(frontier.top());
 		frontier.pop();
 
-		while (solution.size() >= static_cast<unsigned>(depth) && depth != 0) {
+		while ((size = solution.size()) >= current.depth && current.depth > 0) {
 			solution.pop_back();
 		}
-
-		solution.push_back(action);
 		
-		if (current.isFinal()) {
-			return solution;
-		}
+		if (current.depth > 0)
+			solution.push_back(current.action);
 
-		if (depth >= depth_limit_) {
-			continue;
-		}
 
-		if (explored.find(current) == explored.end()) {
-			for (const SearchAction &action : current.actions()) {
-				auto newState = action.execute(current);
-				frontier.push({newState, action, depth + 1});
+		for (auto &action : current.state.actions()) {  
+			auto newState = action.execute(current.state);
+
+			if (newState.isFinal()) {
+				solution.push_back(action);
+				return solution;
 			}
-			explored.insert(current);
+			dfsNode newNode({newState, action, current.depth + 1});
+
+			if (newNode.depth < depth_limit_) {
+				frontier.push(newNode);
+			}
 		}
 	}
 
@@ -212,29 +215,30 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState &init_state) {
 	std::map<SearchState, double> explored;
 	std::vector<SearchAction> solution;
 
-	frontier.insert(init_state);
+	if (init_state.isFinal())
+		return {};
 
+	frontier.insert(init_state);
+	
 	while (!frontier.empty() and (getCurrentRSS() + MEM_LIMIT < mem_limit_)) {
 		AStarNode current = *(frontier.begin());
 		frontier.erase(frontier.begin());
-
-		if (current.state->isFinal()) {
-			std::vector<SearchAction> actions = {};
-
-			while (current.prevNode) {
-				actions.push_back(*current.action);
-				current = *current.prevNode;
-			}
-			//return reversed actions because we are going from final state to initial state
-			std::reverse(actions.begin(), actions.end());
-			
-			return actions;
-		}
 
 		if (explored.find(*current.state) == explored.end() || explored.find(*current.state)->second > current.f_value) {
 			for (const SearchAction &action : current.state->actions()) {
 				SearchState newState(action.execute(*current.state));
 				AStarNode newNode(newState, action, compute_heuristic(newState, *(this->heuristic_)), current.depth, current); 
+				if (newNode.state->isFinal()) {
+					std::vector<SearchAction> actions = {};
+
+					while (newNode.prevNode) {
+						actions.push_back(*newNode.action);
+						newNode = *newNode.prevNode;
+					}
+					//return reversed actions because we are going from final state to initial state
+					std::reverse(actions.begin(), actions.end());
+					return actions;
+				}
 				frontier.insert(newNode);
 			}
 			explored[*current.state] = current.f_value;
