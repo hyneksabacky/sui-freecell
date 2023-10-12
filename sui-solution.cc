@@ -1,5 +1,5 @@
 /**
- * @file search-strategies.cpp
+ * @file sui-solution.cc
  * @brief Implementation of search strategies for solving a problem using various algorithms.
  *
  * This file contains the implementation of three search strategies: Breadth-First Search (BFS),
